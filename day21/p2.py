@@ -15,7 +15,7 @@ OP = {'+': add, '-': sub, '*': mul, '/': truediv}
 INV = {'-': add, '+': sub, '/': mul, '*': truediv}
 
 
-def find_path(root, target) -> list[str]:
+def find_path(root: str, target: str) -> list[str]:
     if root == target:
         return [root]
     job = monkeys[root]
