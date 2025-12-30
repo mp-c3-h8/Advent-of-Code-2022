@@ -77,7 +77,7 @@ def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start
         if node != start and flow_rates[node] == 0:
             remove_node(graph, weights, flow_rates, node)
 
-    if flow_rates[start] == 0:  # remove start at the end
+    if flow_rates[start] == 0:  # remove start at last
         starts = []
         adj = list(graph[start])
         for i, a in enumerate(adj):
@@ -85,10 +85,6 @@ def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start
         remove_node(graph, weights, flow_rates, start)
 
     return starts
-
-
-def release(flow_rates: FlowRates, nodes: set[Node]) -> int:
-    return sum(flow_rates[n] for n in nodes)
 
 
 def estimate_pressure(flow: FlowRates, weights: Weights, m: int, opened: set[Node]) -> int:
@@ -120,36 +116,27 @@ def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[P
         # candidate = q.pop()
         node, p, opened = item
 
-        if len(opened) == len(graph):
-            best = max(best, p + m*release(flow, opened))
-            continue
-        if m == 0:
-            best = max(best, p)
-            continue
-        if m == 1:  # cant increase total pressure with 1 sec left
-            best = max(best, p + release(flow, opened))
-            continue
-
-        # estimate if candidate can ever be better
-        if p + m*release(flow, opened) + estimate_pressure(flow, weights, m, opened) < best:
-            continue
-
         if node not in opened:
-            i += 1
-            heappush(q, (m-1, i, (node, p + release(flow, opened), opened | {node})))
-            # q.append((node, m-1, new_p, opened | {node}))
+            new_opened = opened | {node}  # open the valve
+            new_p = p + (m-1)*flow_rates[node]
+            best = max(best, new_p)  # we might have a new best
+            if len(new_opened) != len(graph):  # skip if last valve
+                # estimate if candidate can ever get better - TODO: necessary here?
+                if new_p + estimate_pressure(flow, weights, m-1, new_opened) >= best:
+                    i += 1
+                    heappush(q, (m-1, i, (node, new_p, new_opened)))
+                # q.append((node, m-1, new_p, opened | {node}))
 
-        # you can skip the valve and go on: no "else" here
-        can_go_further = False
+        # you can keep the valve closed and move on: no "else" here
         for adj in graph[node]:
             w = weights[(node, adj)]  # travel time
-            if m - w > 1:
-                can_go_further = True
-                i += 1
-                heappush(q, (m-w, i, (adj, p + w*release(flow, opened), opened)))
-                # q.append((adj, m-w, new_p, opened))
-        if not can_go_further:  # wait remaining time
-            best = max(best, p + m*release(flow, opened))
+            if m - w > 1:  # we need at least 2 s
+                # estimate if candidate can ever get better
+                if p + estimate_pressure(flow, weights, m-w, opened) >= best:
+                    i += 1
+                    heappush(q, (m-w, i, (adj, p, opened)))
+                    # q.append((adj, m-w, new_p, opened))
+
     print(i)
     return best
 
@@ -164,4 +151,4 @@ starts = simpflify_graph(graph, weights, flow_rates, "AA", 30)
 ans = max_pressure(graph, weights, flow_rates, starts)
 print("Part 1:", ans)
 
-#plot_graph(graph, weights)
+# plot_graph(graph, weights)
