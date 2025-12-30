@@ -1,7 +1,6 @@
 import os.path
 import re
 from itertools import combinations
-from collections import deque
 from heapq import heappop, heappush, heapify
 
 type Node = str
@@ -107,13 +106,11 @@ def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[P
     # prio = minutes left: less time comes first -> "best" grows faster and we can skip more candidates
     q: list[PrioItem] = starts  # ( prio, counter, (candidate,sum_press,opened_valves) )
     heapify(q)
-    # q = deque([("AA", 30, 0, set(["AA"]))])
     best = 0
 
     i = 0
     while q:
         m, _count, item = heappop(q)
-        # candidate = q.pop()
         node, p, opened = item
 
         if node not in opened:
@@ -125,7 +122,6 @@ def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[P
                 if new_p + estimate_pressure(flow, weights, m-1, new_opened) >= best:
                     i += 1
                     heappush(q, (m-1, i, (node, new_p, new_opened)))
-                # q.append((node, m-1, new_p, opened | {node}))
 
         # you can keep the valve closed and move on: no "else" here
         for adj in graph[node]:
@@ -135,9 +131,6 @@ def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[P
                 if p + estimate_pressure(flow, weights, m-w, opened) >= best:
                     i += 1
                     heappush(q, (m-w, i, (adj, p, opened)))
-                    # q.append((adj, m-w, new_p, opened))
-
-    print(i)
     return best
 
 
