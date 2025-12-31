@@ -8,8 +8,8 @@ type Edge = tuple[Node, Node]
 type Graph = dict[Node, set[Node]]  # node -> {adjacent nodes}
 type Weights = dict[Edge, int]  # travel time between nodes. init with 1 for all
 type FlowRates = dict[Node, int]
-type Item = tuple[Node, int, set[Node]]  # item for prio Q: (candidate,sum_press,opened_valves)
-type PrioItem = tuple[int, int, Item]  # (minutes_left,counter,Item)
+type Item = tuple[Node, int, int, set[Node]]  # item for prio Q: (candidate,minutes_left,sum_press,opened_valves)
+type PrioItem = tuple[int, int, Item]  # (prio,counter,Item)
 
 
 def plot_graph(graph: Graph, weights: Weights) -> None:
@@ -71,7 +71,7 @@ def remove_node(graph: Graph, weights: Weights, flow_rates: FlowRates, node: Nod
 def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start: Node, limit: int) -> list[PrioItem]:
     # delete zero flow rate nodes and adjust weights
     nodes = list(graph)
-    starts: list[PrioItem] = [(limit, 0, (start, 0, set([start])))]
+    starts: list[PrioItem] = [(0, 0, (start, limit, 0, set([start])))]
     for node in nodes:
         if node != start and flow_rates[node] == 0:
             remove_node(graph, weights, flow_rates, node)
@@ -80,7 +80,8 @@ def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start
         starts = []
         adj = list(graph[start])
         for i, a in enumerate(adj):
-            starts.append((limit-weights[(start, a)], i, (a, 0, set())))
+            min_left = limit-weights[(start, a)]
+            starts.append((0, i, (a, min_left, 0, set())))
         remove_node(graph, weights, flow_rates, start)
 
     return starts
@@ -88,8 +89,8 @@ def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start
 
 def estimate_pressure(flow: FlowRates, weights: Weights, m: int, opened: set[Node]) -> int:
     # best case for the remaining amount of pressure: (upper bound)
-    # - we stand at a valve and open it (1 sec) -> m-1 sec remaining
-    # - every next release takes x+1 sec (x sec travel + 1sec opening)
+    # - we are at a valve and open it (1 min) -> m-1 min remaining
+    # - every next release takes x+1 min (x min travel + 1 min to open)
     # - x is the lowest travel time between all closed valves
     # - we open valves is descending order (flow rate)
     closed_valves = set(flow).difference(opened)
@@ -103,15 +104,15 @@ def estimate_pressure(flow: FlowRates, weights: Weights, m: int, opened: set[Nod
 
 
 def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[PrioItem]) -> int:
-    # prio = minutes left: less time comes first -> "best" grows faster and we can skip more candidates
-    q: list[PrioItem] = starts  # ( prio, counter, (candidate,sum_press,opened_valves) )
+    # prio: highest total pressure comes first -> "best" grows faster and we can skip more candidates
+    q: list[PrioItem] = starts  # ( prio, counter, (candidate,minutes_left,sum_press,opened_valves) )
     heapify(q)
     best = 0
 
     i = 0
     while q:
-        m, _count, item = heappop(q)
-        node, p, opened = item
+        _prio, _count, item = heappop(q)
+        node, m, p, opened = item
 
         if node not in opened:
             new_opened = opened | {node}  # open the valve
@@ -121,16 +122,16 @@ def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[P
                 # estimate if candidate can ever get better - TODO: necessary here?
                 if new_p + estimate_pressure(flow, weights, m-1, new_opened) >= best:
                     i += 1
-                    heappush(q, (m-1, i, (node, new_p, new_opened)))
+                    heappush(q, (-new_p, i, (node, m-1, new_p, new_opened)))
 
-        # you can keep the valve closed and move on: no "else" here
+        # we can keep the valve closed and move on: no "else" here
         for adj in graph[node]:
             w = weights[(node, adj)]  # travel time
-            if m - w > 1:  # we need at least 2 s
+            if m - w > 1:  # we need at least 2 min
                 # estimate if candidate can ever get better
                 if p + estimate_pressure(flow, weights, m-w, opened) >= best:
                     i += 1
-                    heappush(q, (m-w, i, (adj, p, opened)))
+                    heappush(q, (-p, i, (adj, m-w, p, opened)))
     return best
 
 
