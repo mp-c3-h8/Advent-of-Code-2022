@@ -93,7 +93,7 @@ def estimate_pressure(node: Node, flow: FlowRates, weights: Weights, m: int, ope
     # - every next release takes x+1 min (x min travel + 1 min to open)
     # - x is the lowest travel time between all closed valves
     # - we open valves is descending order (flow rate)
-    closed_valves = set(flow).difference(opened)
+    closed_valves = set(flow).difference(opened)  # at least 1
     travel_times = [weights[(e1, e2)] for e1, e2 in combinations(closed_valves | {node}, 2) if (e1, e2) in weights]
     x = 1 if len(travel_times) == 0 else min(travel_times)
     to_open = 1 + ((m-1) // (x+1))
@@ -132,6 +132,7 @@ def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[P
                 if p + estimate_pressure(adj, flow, weights, m-w, opened) >= best:
                     i += 1
                     heappush(q, (-p, i, (adj, m-w, p, opened)))
+    print(i)
     return best
 
 
