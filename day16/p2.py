@@ -1,16 +1,16 @@
 import os.path
 import re
-from itertools import combinations
+from itertools import combinations, product
 from heapq import heappop, heappush, heapify
+from copy import deepcopy
 
 type Node = str
 type Edge = tuple[Node, Node]
 type Graph = dict[Node, set[Node]]  # node -> {adjacent nodes}
 type Weights = dict[Edge, int]  # travel time between nodes. init with 1 for all
 type FlowRates = dict[Node, int]
-# item for prio Q: (node,time_left,node_e,time_left_e,sum_press,opened_valves)
-type Item = tuple[Node, int, Node, int, int, set[Node]]
-type PrioItem = tuple[int, int, Item]  # (prio,counter,Item)
+type Item = tuple[int, list[Node]]  # item for prio Q: (minutes_left,opened_valves)
+type PrioItem = tuple[int, int, int, Item, Item]  # (prio,counter,sum_press,Item,Item_elephant)
 
 
 def plot_graph(graph: Graph, weights: Weights) -> None:
@@ -45,6 +45,7 @@ def create_graph(data: str) -> tuple[Graph, Weights, FlowRates]:
         node, flow_str, adj_str = found[0]
         adj = adj_str.split(", ")
         graph[node] = set(adj)
+        weights[(node, node)] = 0
         for a in adj:
             weights[(node, a)] = 1
             weights[(a, node)] = 1
@@ -65,104 +66,115 @@ def remove_node(graph: Graph, weights: Weights, flow_rates: FlowRates, node: Nod
         graph[a].remove(node)
         del weights[(node, a)]
         del weights[(a, node)]
+    del weights[(node, node)]
     del flow_rates[node]
     del graph[node]
 
 
-def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start: Node, limit: int) -> list[PrioItem]:
+def simpflify_graph(graph: Graph, weights: Weights, flow_rates: FlowRates, start: Node) -> None:
     # delete zero flow rate nodes and adjust weights
     nodes = list(graph)
-    starts: list[PrioItem] = [(0, 0, (start, limit, start, limit, 0, set([start])))]
     for node in nodes:
         if node != start and flow_rates[node] == 0:
             remove_node(graph, weights, flow_rates, node)
 
-    # if flow_rates[start] == 0:  # remove start at last
-    #     starts = []
-    #     adj = list(graph[start])
-    #     for i, a in enumerate(adj):
-    #         min_left = limit-weights[(start, a)]
-    #         starts.append((0, i, (a, min_left, 0, set())))
-    #     remove_node(graph, weights, flow_rates, start)
 
-    return starts
+def floyd_warshall(graph: Graph, weights: Weights) -> Weights:
+    # https://www.geeksforgeeks.org/dsa/floyd-warshall-algorithm-dp-16/
+    nodes = list(graph)
+    shortest_paths = deepcopy(weights)
+
+    for k in nodes:
+        for i in nodes:
+            for j in nodes:
+                w_ij = shortest_paths[(i, j)] if (i, j) in shortest_paths else 10**10
+                w_ik = shortest_paths[(i, k)] if (i, k) in shortest_paths else 10**10
+                w_kj = shortest_paths[(k, j)] if (k, j) in shortest_paths else 10**10
+                shortest_paths[(i, j)] = min(w_ij, w_ik + w_kj)
+    return shortest_paths
 
 
-def estimate_pressure(flow: FlowRates, weights: Weights, m: int, opened: set[Node]) -> int:
+def estimate_pressure(node: Node, flow: FlowRates, shortest_paths: Weights, m: int, closed: set[Node]) -> int:
     # best case for the remaining amount of pressure: (upper bound)
-    # - we are at a valve and open it (1 min) -> m-1 min remaining
-    # - every next release takes x+1 min (x min travel + 1 min to open)
-    # - x is the lowest travel time between all closed valves
-    # - we open valves is descending order (flow rate)
-    closed_valves = set(flow).difference(opened)
-    travel_times = [weights[(e1, e2)] for e1, e2 in combinations(closed_valves, 2) if (e1, e2) in weights]
-    x = 1 if len(travel_times) == 0 else min(travel_times)
-    to_open = 1 + ((m-1) // (x+1))
-    flow_rates = sorted([flow[n] for n in closed_valves], reverse=True)
-    to_open = min(to_open, len(flow_rates))  # cant open more than len(flow_rates) valves
-    estimate = sum(flow_rates[i] * (m-1-(x+1)*i) for i in range(to_open))
+    time_to_next = min(shortest_paths[(node, e)] for e in closed)
+    if m-time_to_next < 2:
+        return 0
+    travel_times = sorted([shortest_paths[(e1, e2)] for e1, e2 in combinations(closed, 2)])
+    flow_rates = sorted([flow[n] for n in closed], reverse=True)
+    estimate = (m-time_to_next-1) * flow_rates[0]
+    m -= time_to_next+1
+    for t, f in zip(travel_times, flow_rates[1:]):
+        if m - t < 2:
+            break
+        estimate += (m-t-1) * f
+        m -= t+1
     return estimate
 
 
-def max_pressure(graph: Graph, weights: Weights, flow: FlowRates, starts: list[PrioItem]) -> int:
-    # prio: highest total pressure comes first -> "best" grows faster and we can skip more candidates
-    q: list[PrioItem] = starts  # ( prio, counter, (node,time_left,node_e,time_left_e,sum_press,opened_valves) )
+def max_pressure(graph: Graph, shortest_paths: Weights, flow: FlowRates) -> int:
+    i1: Item = (26, ["AA"])
+    i2: Item = (26, ["AA"])
+
+    # prio: highest total pressure comes first -> "best" grows faster
+    q: list[PrioItem] = [(0, 0, 0, i1, i2)]
     heapify(q)
     best = 0
 
     i = 0
     while q:
-        _prio, _count, item = heappop(q)
-        node, m, node_e, m_e, p, opened = item
+        _prio, _count, p, item, item_e = heappop(q)
+        m, opened = item
+        m_e, opened_e = item_e
+        last_opened = opened[-1]
+        last_opened_e = opened_e[-1]
+        closed = set(graph).difference(set(opened)).difference(set(opened_e))
 
-        if node == node_e:
-            pass
+        solo = deepcopy(closed)
+        solo_e = deepcopy(closed)
 
-        best = max(best, p)
-        if p + estimate_pressure(flow, weights, m+m_e, opened) < best:
-            continue
-        if len(opened) == len(graph):
-            continue
-        if m <= 1 and m_e <= 1:
-            continue
+        for node, node_e in product(closed, repeat=2):
+            if node == node_e:
+                continue
+            w = shortest_paths[(last_opened, node)]
+            w_e = shortest_paths[(last_opened_e, node_e)]
+            if m-w >= 1 and m_e - w_e >= 1:
+                new_p = p + (m-w-1)*flow[node] + (m_e - w_e-1)*flow[node_e]
+                new_closed = closed.difference({node, node_e})
+                best = max(best, new_p)
+                if len(new_closed) == 0:
+                    continue
 
-        if node not in opened:
-            new_opened = opened.union({node})  # open the valve
-            new_p = p + (m-1)*flow_rates[node]
-            best = max(best, new_p)  # we might have a new best
-            if len(new_opened) != len(graph):  # skip if last valve
-                # estimate if candidate can ever get better - TODO: necessary here?
-                if new_p + estimate_pressure(flow, weights, m-1 + m_e, new_opened) >= best:
+                if new_p + estimate_pressure(node, flow, shortest_paths, m-w-1, new_closed) + estimate_pressure(node_e, flow, shortest_paths, m_e - w_e-1, new_closed) >= best:
                     i += 1
-                    heappush(q, (-new_p, i, (node, m-1, node_e, m_e, new_p, new_opened)))  # me
+                    heappush(q, (-new_p, i, new_p, (m-w-1, opened + [node]), (m_e - w_e-1, opened_e + [node_e])))
+                    solo.difference_update({node})
+                    solo_e.difference_update({node_e})
 
-        if node_e not in opened and node != node_e:
-            new_opened = opened.union({node_e})  # open the valve
-            new_p = p + (m_e-1)*flow_rates[node_e]
-            best = max(best, new_p)  # we might have a new best
-            if len(new_opened) != len(graph):  # skip if last valve
-                # estimate if candidate can ever get better - TODO: necessary here?
-                if new_p + estimate_pressure(flow, weights, m + m_e-1, new_opened) >= best:
+        for node in solo:
+            w = shortest_paths[(last_opened, node)]
+            if m-w >= 1:  # i open
+                new_p = p + (m-w-1)*flow[node]
+                new_opened = opened + [node]
+                new_closed = closed.difference({node})
+                best = max(best, new_p)
+                if len(new_closed) == 0:
+                    continue
+                if new_p + estimate_pressure(node, flow, shortest_paths, m-w-1, new_closed) + estimate_pressure(last_opened_e, flow, shortest_paths, m_e, new_closed) >= best:
                     i += 1
-                    heappush(q, (-new_p, i, (node, m, node_e, m_e-1, new_p, new_opened)))
+                    heappush(q, (-new_p, i, new_p, (m-w-1, new_opened), item_e))
 
-        # we can keep the valve closed and move on: no "else" here
-        for adj in graph[node]:
-            w = weights[(node, adj)]  # travel time
-            if m - w > 1:  # we need at least 2 min
-                # estimate if candidate can ever get better
-                if p + estimate_pressure(flow, weights, m-w + m_e, opened) >= best:
+        for node_e in solo_e:
+            w_e = shortest_paths[(last_opened_e, node_e)]
+            if m_e - w_e >= 1:  # elephant opens
+                new_p = p + (m_e - w_e-1)*flow[node_e]
+                new_opened_e = opened_e + [node_e]
+                new_closed = closed.difference({node_e})
+                best = max(best, new_p)
+                if len(new_closed) == 0:
+                    continue
+                if new_p + estimate_pressure(last_opened, flow, shortest_paths, m, new_closed) + estimate_pressure(node_e, flow, shortest_paths, m_e - w_e-1, new_closed) >= best:
                     i += 1
-                    heappush(q, (-p, i, (adj, m-w, node_e, m_e, p, opened)))
-
-        # we can keep the valve closed and move on: no "else" here
-        for adj in graph[node_e]:
-            w = weights[(node_e, adj)]  # travel time
-            if m_e - w > 1:  # we need at least 2 min
-                # estimate if candidate can ever get better
-                if p + estimate_pressure(flow, weights,  m + m_e-w, opened) >= best:
-                    i += 1
-                    heappush(q, (-p, i, (node, m, adj, m_e-w, p, opened)))
+                    heappush(q, (-new_p, i, new_p, item, (m_e-w_e-1, new_opened_e)))
 
     print(i)
     return best
@@ -174,8 +186,8 @@ with open(input_path) as f:
     data = f.read()
 
 graph, weights, flow_rates = create_graph(data)
-starts = simpflify_graph(graph, weights, flow_rates, "AA", 26)
-ans = max_pressure(graph, weights, flow_rates, starts)
+simpflify_graph(graph, weights, flow_rates, "AA")
+shortest_paths = floyd_warshall(graph, weights)
+ans = max_pressure(graph, shortest_paths, flow_rates)
 print("Part 2:", ans)
-
 # plot_graph(graph, weights)
