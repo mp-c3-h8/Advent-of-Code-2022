@@ -1,8 +1,6 @@
 import os.path
 from collections import deque
 from typing import Iterator
-from timeit import default_timer as timer
-
 
 type Coord = tuple[int, int, int]  # (x,y,z)
 type Component = set[Coord]  # connected, not scattered
@@ -15,7 +13,6 @@ class Droplet:
         bounds_min, bounds_max = self.calc_bounds(self.coords)
         self.bounds_min: Coord = bounds_min
         self.bounds_max: Coord = bounds_max
-        self.exterior: Component = self.calc_exterior()
         self.holes: list[Component] = self.calc_holes()
         self.surface_interior: int = self.calc_surface_interior()
 
@@ -38,31 +35,51 @@ class Droplet:
         x_min, y_min, z_min = map(min, ((c[i] for c in comp) for i in range(3)))
         return (x_min-1, y_min-1, z_min-1), (x_max+1, y_max+1, z_max+1)
 
-    def flood_fill(self, start: Coord) -> Component:
+    def flood_from_outside(self) -> int:
+        q: deque[Coord] = deque([self.bounds_max])
+        seen = set()
+        res = 0
+        while q:
+            coord = q.pop()
+            if coord in self.coords:
+                res += 1
+                continue
+            if coord in seen:
+                continue
+            seen.add(coord)
+            q.extend(n for n in self.neighbors(coord) if self.inbound(n))
+        return res
+
+    def flood_fill(self, start: Coord) -> tuple[Component, bool]:
         component: Component = set()
+        is_hole: bool = True
         q: deque[Coord] = deque([start])
 
         while q:
             coord = q.pop()
             component.add(coord)
             for n in self.neighbors(coord):
-                if self.inbound(n) and n not in component and n not in self.coords:
+                if self.is_exterior(n):
+                    is_hole = False
+                    continue
+                if n not in component and n not in self.coords:
                     q.append(n)
-        return component
-
-    def calc_exterior(self) -> Component:
-        return self.flood_fill(self.bounds_max)
+        return (component, is_hole)
 
     def calc_holes(self) -> list[Component]:
         components: list[Component] = []
+        exterior: set[Coord] = set()
 
         for coord in self.interior_iterator():
-            if coord in self.coords or coord in self.exterior:
+            if coord in self.coords or coord in exterior:
                 continue
             if any(coord in comp for comp in components):
                 continue
-            component = self.flood_fill(coord)
-            components.append(component)
+            component, is_hole = self.flood_fill(coord)
+            if is_hole:
+                components.append(component)
+            else:
+                exterior.update(component)
 
         return components
 
@@ -77,12 +94,12 @@ class Droplet:
                 for z in range(z_min+1, z_max):
                     yield (x, y, z)
 
-    def inbound(self, coord: Coord) -> bool:
-        in_min = all(coord[i] >= self.bounds_min[i] for i in range(3))
-        in_max = all(coord[i] <= self.bounds_max[i] for i in range(3))
-        return in_min and in_max
+    def is_exterior(self, coord: Coord) -> bool:
+        return any(coord[i] == bounds[i] for bounds in (self.bounds_max, self.bounds_min) for i in range(3))
 
-start = timer()
+    def inbound(self, coord: Coord) -> bool:
+        return all(self.bounds_min[i] <= coord[i] <= self.bounds_max[i] for i in range(3))
+
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 input_path = os.path.join(dir_path, "input.txt")
@@ -91,7 +108,5 @@ with open(input_path) as f:
 
 droplet = Droplet(data)
 print("Part 1:", droplet.surface)
-print("Part 2:", droplet.surface - droplet.surface_interior)
-
-end = timer()
-print(end - start)
+print("Part 2 (find holes):", droplet.surface - droplet.surface_interior)
+print("Part 2 (flood fill outside):", droplet.flood_from_outside())
