@@ -1,8 +1,6 @@
 import os.path
 import inspect
-from typing import Iterator
 from itertools import cycle
-from copy import deepcopy
 
 type Pixel = tuple[int, int]  # (x,y)
 
@@ -42,20 +40,11 @@ class Tetris:
         self.w = w
         self.spawn_x = spawn_x
         self.spawn_y = spawn_y
-        self.push = self.push_iterator()
-        self.spawn = self.spawn_iterator()
+        self.push = cycle({"<": -1, ">": 1}[j] for j in jet)
+        self.spawn = cycle(self.blueprints)
         self.occupied: set[Pixel] = set()
         self.pieces: list[tuple[Piece, Pixel]] = []
         self.max_y: int = 0
-
-    def spawn_iterator(self) -> Iterator[Piece]:
-        for piece in cycle(self.blueprints):
-            yield deepcopy(piece)
-
-    def push_iterator(self) -> Iterator[int]:
-        DIR = {"<": -1, ">": 1}
-        for d in cycle(self.jet):
-            yield DIR[d]
 
     def play(self, n: int, plot: bool = False) -> int:
         for _ in range(n):
@@ -150,6 +139,5 @@ square = inspect.cleandoc("""
 h, c, l = Piece("hor", 4, 4, hor), Piece("cross", 4, 4, cross), Piece("l", 4, 4, el)
 v, s = Piece("vert", 4, 4, vert), Piece("square", 4, 4, square)
 game = Tetris([h, c, l, v, s], data)
-ans = game.play(2022,False)
+ans = game.play(2022, False)
 print("Part 1:", ans)
-
