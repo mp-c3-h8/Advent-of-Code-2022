@@ -76,7 +76,7 @@ def spreadout(elves: set[Pos], rounds: int | None = None) -> tuple[set[Pos], int
                 new_elves.update(moves)
 
         elves = new_elves
-        dirs.append(dirs.popleft())
+        dirs.rotate(-1)
     return (elves, i+1)
 
 
