@@ -1,7 +1,7 @@
 import os.path
 from timeit import default_timer as timer
 from enum import Enum
-from collections import defaultdict
+from collections import defaultdict, deque
 
 type Pos = complex
 
@@ -45,12 +45,12 @@ def spreadout(elves: set[Pos], rounds: int | None = None) -> tuple[set[Pos], int
     if rounds is None:
         rounds = 3*10**3
 
-    dirs = [
+    dirs = deque([
         (DIRS.N, (DIRS.NW, DIRS.N, DIRS.NE)),
         (DIRS.S, (DIRS.SE, DIRS.S, DIRS.SW)),
         (DIRS.W, (DIRS.SW, DIRS.W, DIRS.NW)),
         (DIRS.E, (DIRS.NE, DIRS.E, DIRS.SE)),
-    ]
+    ])
 
     i = 0
     proposals: defaultdict[Pos, list[Pos]] = defaultdict(list)
@@ -76,7 +76,7 @@ def spreadout(elves: set[Pos], rounds: int | None = None) -> tuple[set[Pos], int
                 new_elves.update(moves)
 
         elves = new_elves
-        dirs.append(dirs.pop(0))
+        dirs.append(dirs.popleft())
     return (elves, i+1)
 
 
