@@ -66,7 +66,7 @@ def mix(node: Node) -> None:
     # put node in front of temp
     node.prev = temp
     node.next = temp.next
-    temp.next = node
+    node.prev.next = node
     node.next.prev = node
 
 
