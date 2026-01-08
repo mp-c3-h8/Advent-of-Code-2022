@@ -5,6 +5,12 @@ from z3 import IntVector, Sum, Optimize
 from math import prod
 from itertools import chain
 
+'''
+!!
+equations are found in the linprog script
+!!
+'''
+
 
 def parse_input(data: str) -> list[list[int]]:
     res = []
